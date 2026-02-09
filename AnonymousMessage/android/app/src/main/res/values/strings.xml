@@ -1,0 +1,62 @@
+<resources>
+    <string name="app_name">AnonymousMessage</string>
+    
+    <!-- Registration Activity Strings -->
+    <string name="title_register">Create Account</string>
+    <string name="hint_username">Username (@username)</string>
+    <string name="hint_email">Email Address</string>
+    <string name="hint_password">Password</string>
+    <string name="btn_register">Register</string>
+    <string name="already_registered">Already registered? Sign in</string>
+    <string name="email_already_registered">Email already registered. Please sign in.</string>
+    <string name="invalid_email_format">Invalid email format</string>
+    <string name="password_too_weak">Password is too weak. Minimum 8 characters with uppercase, lowercase, and special character.</string>
+    <string name="username_taken">Username is already taken. Please choose another one.</string>
+    
+    <!-- Login Activity Strings -->
+    <string name="title_login">Sign In</string>
+    <string name="btn_login">Sign In</string>
+    <string name="not_registered">Not registered? Create account</string>
+    <string name="verification_code_sent">Verification code sent to your email</string>
+    <string name="enter_verification_code">Enter verification code</string>
+    <string name="resend_code">Resend Code</string>
+    
+    <!-- Main Activity Strings -->
+    <string name="title_main">AnonymousMessage</string>
+    <string name="search_contacts">Search contacts...</string>
+    <string name="new_message">New Message</string>
+    <string name="groups">Groups</string>
+    <string name="calls">Calls</string>
+    <string name="settings">Settings</string>
+    
+    <!-- Chat Strings -->
+    <string name="send_message">Send</string>
+    <string name="voice_message">Voice Message</string>
+    <string name="camera">Camera</string>
+    <string name="gallery">Gallery</string>
+    <string name="location">Location</string>
+    <string name="document">Document</string>
+    
+    <!-- Call Strings -->
+    <string name="start_voice_call">Voice Call</string>
+    <string name="start_video_call">Video Call</string>
+    <string name="mute_microphone">Mute Microphone</string>
+    <string name="unmute_microphone">Unmute Microphone</string>
+    <string name="mute_speaker">Mute Speaker</string>
+    <string name="unmute_speaker">Unmute Speaker</string>
+    <string name="end_call">End Call</string>
+    
+    <!-- Settings Strings -->
+    <string name="profile">Profile</string>
+    <string name="privacy">Privacy</string>
+    <string name="security">Security</string>
+    <string name="tor_settings">TOR Settings</string>
+    <string name="change_avatar">Change Avatar</string>
+    <string name="change_username">Change Username</string>
+    
+    <!-- Error Messages -->
+    <string name="error_network">Network error. Please check your connection.</string>
+    <string name="error_authentication">Authentication failed. Please try again.</string>
+    <string name="error_server">Server error. Please try again later.</string>
+    <string name="error_permission_denied">Permission denied. Please enable required permissions.</string>
+</resources>
