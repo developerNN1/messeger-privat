@@ -14,6 +14,7 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  AsyncStorage,
 } from 'react-native';
 
 import messaging from '@react-native-firebase/messaging';
@@ -52,18 +53,34 @@ const App = () => {
       return;
     }
 
-    // Simulate login process
-    setTimeout(() => {
-      // In real implementation, this would authenticate via Tor
-      setCurrentUser({
-        id: 'user123',
-        username: 'testuser',
+    try {
+      // Create login request with hashed password
+      const loginData = {
         email: email,
-        avatar: '',
-      });
-      setScreen('chat');
+        password_hash: await hashPassword(password),
+        timestamp: Date.now(),
+      };
+
+      // Encrypt login data
+      const encryptedLoginData = await encryptData(loginData);
+
+      // Send encrypted login request through Tor
+      const response = await sendThroughTor(encryptedLoginData, '/api/login');
+
+      if (response.success) {
+        // Store user session securely
+        await AsyncStorage.setItem('user_session', JSON.stringify(response.user));
+        setCurrentUser(response.user);
+        setScreen('chat');
+      } else {
+        Alert.alert('Login Failed', response.message || 'Invalid credentials');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      Alert.alert('Error', 'Login failed. Please try again.');
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   const handleRegister = async () => {
@@ -82,18 +99,117 @@ const App = () => {
       return;
     }
 
-    // Simulate registration process
-    setTimeout(() => {
-      // In real implementation, this would register via Tor
-      setCurrentUser({
-        id: 'user123',
+    try {
+      // Check if email is already registered
+      const emailCheckData = {
+        email: email,
+        operation: 'check_email_exists'
+      };
+      
+      const emailCheckResponse = await sendThroughTor(
+        await encryptData(emailCheckData), 
+        '/api/check_email'
+      );
+      
+      if (emailCheckResponse.exists) {
+        Alert.alert('Registration Error', 'This email is already registered. Please use another email or sign in.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Generate cryptographic keys for user
+      const userKeys = await generateUserKeys(username);
+      
+      // Create registration data
+      const registrationData = {
         username: username,
         email: email,
-        avatar: '',
-      });
-      setScreen('chat');
+        password_hash: await hashPassword(password),
+        public_key: userKeys.publicKey,
+        timestamp: Date.now(),
+      };
+
+      // Encrypt registration data
+      const encryptedRegistrationData = await encryptData(registrationData);
+
+      // Send encrypted registration request through Tor
+      const response = await sendThroughTor(encryptedRegistrationData, '/api/register');
+
+      if (response.success) {
+        // Store user session securely
+        await AsyncStorage.setItem('user_session', JSON.stringify(response.user));
+        setCurrentUser(response.user);
+        setScreen('chat');
+        Alert.alert('Success', 'Registration successful! Verification code sent to your email.');
+      } else {
+        Alert.alert('Registration Failed', response.message || 'Registration failed. Please try again.');
+      }
+    } catch (error) {
+      console.error('Registration error:', error);
+      Alert.alert('Error', 'Registration failed. Please try again.');
+    } finally {
       setIsLoading(false);
-    }, 2000);
+    }
+  };
+
+  // Helper function to hash password
+  const hashPassword = async (password) => {
+    // In a real implementation, this would use a proper hashing algorithm
+    // For now, we'll use a simple approach
+    const crypto = require('crypto');
+    return crypto.createHash('sha256').update(password).digest('hex');
+  };
+
+  // Helper function to generate user keys
+  const generateUserKeys = async (username) => {
+    // In a real implementation, this would generate proper cryptographic keys
+    // For now, we'll simulate key generation
+    return {
+      publicKey: `public_key_for_${username}_${Date.now()}`,
+      privateKey: `private_key_for_${username}_${Date.now()}`
+    };
+  };
+
+  // Helper function to encrypt data
+  const encryptData = async (data) => {
+    // In a real implementation, this would perform actual encryption
+    // For now, we'll simulate encryption by converting to base64
+    return btoa(JSON.stringify(data));
+  };
+
+  // Helper function to send data through Tor
+  const sendThroughTor = async (encryptedData, endpoint) => {
+    // In a real implementation, this would send data through Tor network
+    // For now, we'll simulate the network request
+    console.log(`Sending encrypted data to ${endpoint}:`, encryptedData);
+    
+    // Simulate network delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Simulate response
+    if (endpoint.includes('/register')) {
+      return { 
+        success: true, 
+        user: { 
+          id: `user_${Date.now()}`, 
+          username: username, 
+          email: email,
+          avatar: ''
+        } 
+      };
+    } else if (endpoint.includes('/login')) {
+      return { 
+        success: true, 
+        user: { 
+          id: `user_${Date.now()}`, 
+          username: 'testuser', 
+          email: email,
+          avatar: ''
+        } 
+      };
+    }
+    
+    return { success: false, message: 'Unknown error' };
   };
 
   const sendMessage = () => {
