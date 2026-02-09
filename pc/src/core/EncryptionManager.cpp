@@ -156,45 +156,193 @@ QByteArray EncryptionManager::decryptMessage(const QByteArray &encryptedMessage,
 
 QByteArray EncryptionManager::encryptLocal(const QByteArray &data, const QString &key)
 {
-    // For local encryption, we'll use AES-256-GCM
-    // This is a simplified implementation - a full implementation would use proper AES-GCM
-    
+    // For local encryption, we'll use AES-256-GCM with proper implementation
     // Generate salt
     QByteArray salt = generateSalt();
     
-    // Derive key from password
+    // Derive key from password using PBKDF2
     QByteArray derivedKey = deriveKeyFromPassword(key, salt);
     
-    // Simple XOR encryption (in real implementation, use proper AES-GCM)
-    QByteArray encrypted = data;
-    for (int i = 0; i < encrypted.size(); ++i) {
-        encrypted[i] ^= derivedKey[i % derivedKey.size()];
+    // Initialize OpenSSL cipher context for AES-256-GCM
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) {
+        qCritical() << "Failed to create cipher context";
+        return QByteArray();
     }
     
-    // Prepend salt to encrypted data
-    return salt + encrypted;
+    // Initialize encryption operation with generated key
+    if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1) {
+        qCritical() << "Failed to initialize encryption";
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+    
+    // Generate random IV (Initialization Vector)
+    QByteArray iv(16, 0);  // 128-bit IV for AES
+    for (int i = 0; i < iv.size(); ++i) {
+        iv[i] = static_cast<char>(QRandomGenerator::global()->bounded(256));
+    }
+    
+    // Set IV length
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv.size(), NULL) != 1) {
+        qCritical() << "Failed to set IV length";
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+    
+    // Initialize encryption operation with key and IV
+    if (EVP_EncryptInit_ex(ctx, NULL, NULL, 
+                          reinterpret_cast<const unsigned char*>(derivedKey.constData()), 
+                          reinterpret_cast<const unsigned char*>(iv.constData())) != 1) {
+        qCritical() << "Failed to initialize encryption with key and IV";
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+    
+    // Allocate space for ciphertext
+    QByteArray ciphertext(data.size() + EVP_MAX_BLOCK_LENGTH, 0);
+    int len = 0;
+    
+    // Provide plaintext and obtain ciphertext
+    if (EVP_EncryptUpdate(ctx, 
+                         reinterpret_cast<unsigned char*>(ciphertext.data()), 
+                         &len,
+                         reinterpret_cast<const unsigned char*>(data.constData()), 
+                         data.size()) != 1) {
+        qCritical() << "Failed to encrypt data";
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+    
+    int ciphertext_len = len;
+    
+    // Finalize encryption
+    if (EVP_EncryptFinal_ex(ctx, 
+                           reinterpret_cast<unsigned char*>(ciphertext.data()) + len, 
+                           &len) != 1) {
+        qCritical() << "Failed to finalize encryption";
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+    ciphertext_len += len;
+    
+    // Get authentication tag
+    QByteArray tag(16, 0);  // Standard tag size for GCM
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag.data()) != 1) {
+        qCritical() << "Failed to get authentication tag";
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+    
+    // Clean up
+    EVP_CIPHER_CTX_free(ctx);
+    
+    // Format: salt + IV + ciphertext + tag
+    QByteArray result;
+    result.reserve(salt.size() + iv.size() + ciphertext_len + tag.size());
+    result.append(salt);
+    result.append(iv);
+    result.append(ciphertext.left(ciphertext_len));
+    result.append(tag);
+    
+    return result;
 }
 
 QByteArray EncryptionManager::decryptLocal(const QByteArray &encryptedData, const QString &key)
 {
-    // Extract salt (first 16 bytes)
-    if (encryptedData.size() < 16) {
+    // Extract components: salt (16 bytes) + IV (16 bytes) + ciphertext + tag (16 bytes)
+    if (encryptedData.size() < 48) {  // Minimum size: salt + IV + tag
+        qCritical() << "Encrypted data too small for proper format";
         return QByteArray();
     }
     
+    // Extract salt
     QByteArray salt = encryptedData.left(16);
-    QByteArray encrypted = encryptedData.mid(16);
+    
+    // Extract IV (next 16 bytes)
+    QByteArray iv = encryptedData.mid(16, 16);
+    
+    // Extract tag (last 16 bytes)
+    QByteArray tag = encryptedData.right(16);
+    
+    // Extract ciphertext (everything in between)
+    int ciphertext_start = 32;
+    int ciphertext_end = encryptedData.size() - 16;
+    QByteArray ciphertext = encryptedData.mid(32, ciphertext_end - ciphertext_start);
     
     // Derive key from password and salt
     QByteArray derivedKey = deriveKeyFromPassword(key, salt);
     
-    // Simple XOR decryption (in real implementation, use proper AES-GCM)
-    QByteArray decrypted = encrypted;
-    for (int i = 0; i < decrypted.size(); ++i) {
-        decrypted[i] ^= derivedKey[i % derivedKey.size()];
+    // Initialize OpenSSL cipher context for AES-256-GCM decryption
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) {
+        qCritical() << "Failed to create cipher context for decryption";
+        return QByteArray();
     }
     
-    return decrypted;
+    // Initialize decryption operation
+    if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1) {
+        qCritical() << "Failed to initialize decryption";
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+    
+    // Set IV length
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv.size(), NULL) != 1) {
+        qCritical() << "Failed to set IV length for decryption";
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+    
+    // Initialize decryption operation with key and IV
+    if (EVP_DecryptInit_ex(ctx, NULL, NULL,
+                          reinterpret_cast<const unsigned char*>(derivedKey.constData()),
+                          reinterpret_cast<const unsigned char*>(iv.constData())) != 1) {
+        qCritical() << "Failed to initialize decryption with key and IV";
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+    
+    // Allocate space for plaintext
+    QByteArray plaintext(ciphertext.size() + EVP_MAX_BLOCK_LENGTH, 0);
+    int len = 0;
+    
+    // Provide ciphertext and obtain plaintext
+    if (EVP_DecryptUpdate(ctx,
+                         reinterpret_cast<unsigned char*>(plaintext.data()),
+                         &len,
+                         reinterpret_cast<const unsigned char*>(ciphertext.constData()),
+                         ciphertext.size()) != 1) {
+        qCritical() << "Failed to decrypt data";
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+    
+    int plaintext_len = len;
+    
+    // Set expected tag value
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, tag.size(),
+                           reinterpret_cast<void*>(tag.data())) != 1) {
+        qCritical() << "Failed to set authentication tag";
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+    
+    // Finalize decryption - this also verifies the tag
+    if (EVP_DecryptFinal_ex(ctx,
+                           reinterpret_cast<unsigned char*>(plaintext.data()) + len,
+                           &len) != 1) {
+        qCritical() << "Failed to finalize decryption or authentication failed";
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+    plaintext_len += len;
+    
+    // Clean up
+    EVP_CIPHER_CTX_free(ctx);
+    
+    // Return the plaintext
+    return plaintext.left(plaintext_len);
 }
 
 QString EncryptionManager::hashPassword(const QString &password)
@@ -209,16 +357,71 @@ QString EncryptionManager::hashData(const QByteArray &data)
 
 bool EncryptionManager::verifySignature(const QByteArray &data, const QString &signature, const QString &publicKey)
 {
-    // In a real implementation, this would verify a digital signature
-    // For now, we return true to indicate success
-    return true;
+    // Convert the public key from string to RSA object
+    BIO *bio = BIO_new_mem_buf(publicKey.toLatin1().data(), -1);
+    RSA *rsa = PEM_read_bio_RSA_PUBKEY(bio, NULL, NULL, NULL);
+
+    if (!rsa) {
+        qCritical() << "Failed to parse public key for signature verification";
+        BIO_free(bio);
+        return false;
+    }
+
+    // Calculate hash of the data
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256(reinterpret_cast<const unsigned char*>(data.data()), data.size(), hash);
+
+    // Decode the signature from base64 string
+    QByteArray signatureBytes = QByteArray::fromBase64(signature.toLatin1());
+    if (signatureBytes.isEmpty()) {
+        qCritical() << "Invalid signature format";
+        RSA_free(rsa);
+        BIO_free(bio);
+        return false;
+    }
+
+    // Verify the signature using RSA
+    int result = RSA_verify(NID_sha256, 
+                           hash, 
+                           SHA256_DIGEST_LENGTH,
+                           reinterpret_cast<const unsigned char*>(signatureBytes.data()),
+                           signatureBytes.size(),
+                           rsa);
+
+    // Clean up
+    RSA_free(rsa);
+    BIO_free(bio);
+
+    // Return true if verification was successful
+    return (result == 1);
 }
 
 QByteArray EncryptionManager::deriveKeyFromPassword(const QString &password, const QByteArray &salt)
 {
-    // Simplified key derivation (in real implementation, use PBKDF2 or similar)
-    QByteArray combined = password.toUtf8() + salt;
-    return QCryptographicHash::hash(combined, QCryptographicHash::Sha256);
+    // Proper key derivation using PKCS#5 PBKDF2 with HMAC-SHA256
+    // Parameters: password, salt, iteration count, desired key length
+    int iterations = 10000;  // Recommended minimum for PBKDF2
+    int keyLength = 32;      // 256 bits for AES-256
+    
+    QByteArray derivedKey(keyLength, 0);
+    
+    int result = PKCS5_PBKDF2_HMAC(
+        password.toUtf8().constData(),
+        password.toUtf8().size(),
+        reinterpret_cast<const unsigned char*>(salt.constData()),
+        salt.size(),
+        iterations,
+        EVP_sha256(),
+        keyLength,
+        reinterpret_cast<unsigned char*>(derivedKey.data())
+    );
+    
+    if (result <= 0) {
+        qCritical() << "PBKDF2 key derivation failed";
+        return QCryptographicHash::hash(password.toUtf8() + salt, QCryptographicHash::Sha256);
+    }
+    
+    return derivedKey;
 }
 
 QByteArray EncryptionManager::generateSalt()

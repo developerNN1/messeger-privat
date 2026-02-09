@@ -6,6 +6,7 @@
 #include <QTimer>
 #include <QSslSocket>
 #include <QTcpServer>
+#include <QNetworkProxy>
 #include "core/EncryptionManager.h"
 
 class TorClient : public QObject
@@ -39,6 +40,8 @@ private:
     void setupTorProxy();
     void establishOnionService();
     void configureTorSettings();
+    QByteArray createOnionPacket(const QByteArray &payload, const QString &destination);
+    QByteArray generateRandomPadding(int size);
     
     QSslSocket *torSocket;
     QTcpServer *onionService;
@@ -47,6 +50,8 @@ private:
     quint16 torProxyPort;
     bool connectedToTor;
     EncryptionManager *encryptionMgr;
+    QString targetPublicKey;      // Public key of the recipient for end-to-end encryption
+    QString destinationAddress;   // Onion address of the destination
 };
 
 #endif // TORCLIENT_H
